@@ -4,6 +4,10 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Parallel Timer</title>
+<script>
+  // Apply the saved theme before the page paints, to avoid a flash.
+  try { const t = localStorage.getItem('parallel-timer-theme'); if (t) document.documentElement.dataset.theme = t; } catch (e) {}
+</script>
 <style>
 :root {
   --bg: #f6f5f2; --card: #ffffff; --ink: #1f1f1f; --muted: #6b6b6b; --line: #e2e0db;
@@ -13,9 +17,10 @@
   --you: #d5e7ed; --you-b: #3d7d91;
   --hub: #262626; --hub-ink: #ffffff;
   --warn: #b3261e; --ok: #2e7d32; --focus: #3d7d91;
+  color-scheme: light dark;
 }
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     --bg: #171717; --card: #222222; --ink: #ececec; --muted: #a3a3a3; --line: #3a3a3a;
     --active: #5b302b; --active-b: #e48a7f;
     --gen: #5a4320; --gen-b: #e6a95b;
@@ -23,8 +28,20 @@
     --you: #1f424c; --you-b: #7cc0d4;
     --hub: #e6e6e6; --hub-ink: #111111;
     --warn: #ff8a80; --ok: #81c784; --focus: #7cc0d4;
+    color-scheme: dark;
   }
 }
+:root[data-theme="dark"] {
+  --bg: #171717; --card: #222222; --ink: #ececec; --muted: #a3a3a3; --line: #3a3a3a;
+  --active: #5b302b; --active-b: #e48a7f;
+  --gen: #5a4320; --gen-b: #e6a95b;
+  --pause-b: #8a8a8a;
+  --you: #1f424c; --you-b: #7cc0d4;
+  --hub: #e6e6e6; --hub-ink: #111111;
+  --warn: #ff8a80; --ok: #81c784; --focus: #7cc0d4;
+  color-scheme: dark;
+}
+:root[data-theme="light"] { color-scheme: light; }
 * { box-sizing: border-box; }
 body {
   margin: 0; background: var(--bg); color: var(--ink);
@@ -32,6 +49,8 @@ body {
 }
 main { max-width: 1180px; margin: 0 auto; padding: 20px 16px 48px; }
 h1 { font-size: 20px; margin: 0 0 4px; }
+.top { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+#themeBtn { flex: none; font-size: 13px; padding: 5px 10px; }
 .muted { color: var(--muted); }
 .card {
   background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px;
@@ -95,7 +114,7 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 .at { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 8px; font-size: 13px; color: var(--muted); }
 input[type=time], input[type=datetime-local], input[type=text], select {
   font: inherit; color: var(--ink); background: var(--card); border: 1px solid var(--line);
-  border-radius: 6px; padding: 3px 6px; color-scheme: light dark;
+  border-radius: 6px; padding: 3px 6px;
 }
 .stats { margin-top: 10px; font-size: 13px; font-variant-numeric: tabular-nums; }
 .bar { height: 6px; background: var(--line); border-radius: 99px; margin-top: 6px; overflow: hidden; }
@@ -133,7 +152,10 @@ footer { margin-top: 18px; display: flex; justify-content: flex-end; }
 </head>
 <body>
 <main>
-  <h1>Parallel Timer</h1>
+  <div class="top">
+    <h1>Parallel Timer</h1>
+    <button id="themeBtn" type="button"></button>
+  </div>
   <div class="muted">Active + Generating count. Pause does not. Each task runs until it reaches 8 h.</div>
   <div id="summary"></div>
 
@@ -470,6 +492,21 @@ $('#resetAll').addEventListener('click', () => {
   if (!confirm('Clear all 4 tasks and Hubstaff?')) return;
   state = blank(); save(); render();
 });
+
+/* ---------- night mode ---------- */
+const THEME_KEY = 'parallel-timer-theme';
+const isDark = () => document.documentElement.dataset.theme
+  ? document.documentElement.dataset.theme === 'dark'
+  : matchMedia('(prefers-color-scheme: dark)').matches;
+function paintThemeBtn() { $('#themeBtn').textContent = isDark() ? '☀ Light mode' : '🌙 Night mode'; }
+$('#themeBtn').addEventListener('click', () => {
+  const next = isDark() ? 'light' : 'dark';
+  document.documentElement.dataset.theme = next;
+  try { localStorage.setItem(THEME_KEY, next); } catch (e) {}
+  paintThemeBtn();
+});
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', paintThemeBtn);
+paintThemeBtn();
 
 render();
 setInterval(tick, 1000);
