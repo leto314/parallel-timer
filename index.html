@@ -1,0 +1,478 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Parallel Timer</title>
+<style>
+:root {
+  --bg: #f6f5f2; --card: #ffffff; --ink: #1f1f1f; --muted: #6b6b6b; --line: #e2e0db;
+  --active: #f4d4cf; --active-b: #c0625a;
+  --gen: #f8e0bb; --gen-b: #c98424;
+  --pause-b: #9a9a9a;
+  --you: #d5e7ed; --you-b: #3d7d91;
+  --hub: #262626; --hub-ink: #ffffff;
+  --warn: #b3261e; --ok: #2e7d32; --focus: #3d7d91;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #171717; --card: #222222; --ink: #ececec; --muted: #a3a3a3; --line: #3a3a3a;
+    --active: #5b302b; --active-b: #e48a7f;
+    --gen: #5a4320; --gen-b: #e6a95b;
+    --pause-b: #8a8a8a;
+    --you: #1f424c; --you-b: #7cc0d4;
+    --hub: #e6e6e6; --hub-ink: #111111;
+    --warn: #ff8a80; --ok: #81c784; --focus: #7cc0d4;
+  }
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--ink);
+  font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+main { max-width: 1180px; margin: 0 auto; padding: 20px 16px 48px; }
+h1 { font-size: 20px; margin: 0 0 4px; }
+.muted { color: var(--muted); }
+.card {
+  background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px;
+}
+#summary { margin: 10px 0 16px; font-size: 15px; }
+#summary b { font-variant-numeric: tabular-nums; }
+.warn { color: var(--warn); font-weight: 600; }
+
+/* Timeline */
+.timeline { margin-bottom: 16px; overflow: hidden; }
+.tl-row { display: grid; grid-template-columns: 84px 1fr; align-items: center; gap: 8px; min-height: 30px; }
+.tl-label { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tl-track { position: relative; height: 26px; }
+.tl-axis .tl-track { height: 18px; }
+.tick-label { position: absolute; top: 0; transform: translateX(-50%); font-size: 11px; color: var(--muted); white-space: nowrap; }
+.grid { position: absolute; top: 0; bottom: 0; width: 0; border-left: 1px dashed var(--line); }
+.seg {
+  position: absolute; top: 2px; bottom: 2px; border-radius: 5px; border: 1.5px solid;
+  font-size: 11px; display: flex; align-items: center; justify-content: center;
+  overflow: hidden; white-space: nowrap; min-width: 2px;
+}
+.seg.active { background: var(--active); border-color: var(--active-b); }
+.seg.gen { background: var(--gen); border-color: var(--gen-b); }
+.seg.pause { background: transparent; border: 1.5px dashed var(--pause-b); color: var(--muted); }
+.seg.you { background: var(--you); border-color: var(--you-b); font-weight: 600; }
+.seg.hub { background: var(--hub); border-color: var(--hub); color: var(--hub-ink); font-weight: 600; justify-content: flex-start; padding-left: 6px; }
+.legend { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 8px; font-size: 12px; color: var(--muted); }
+.legend span::before { content: ""; display: inline-block; width: 12px; height: 10px; border-radius: 3px; margin-right: 5px; vertical-align: -1px; border: 1.5px solid; }
+.lg-active::before { background: var(--active); border-color: var(--active-b) !important; }
+.lg-gen::before { background: var(--gen); border-color: var(--gen-b) !important; }
+.lg-pause::before { border-style: dashed !important; border-color: var(--pause-b) !important; }
+
+/* Task cards */
+#tasks { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 14px; }
+.task-head { display: flex; align-items: center; gap: 8px; }
+.letter {
+  flex: none; width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center;
+  background: var(--ink); color: var(--card); font-weight: 700;
+}
+.name {
+  flex: 1; min-width: 0; font: inherit; font-weight: 600; font-size: 15px; color: var(--ink);
+  background: transparent; border: 1px solid transparent; border-radius: 6px; padding: 3px 6px;
+}
+.name:hover, .name:focus { border-color: var(--line); outline: none; }
+.pill { flex: none; font-size: 12px; padding: 2px 8px; border-radius: 99px; border: 1.5px solid var(--line); color: var(--muted); }
+.pill.active { background: var(--active); border-color: var(--active-b); color: var(--ink); }
+.pill.gen { background: var(--gen); border-color: var(--gen-b); color: var(--ink); }
+.pill.pause { border-style: dashed; border-color: var(--pause-b); }
+.cur { display: block; margin: 8px 0; font-variant-numeric: tabular-nums; color: var(--muted); min-height: 20px; }
+.cur b { color: var(--ink); font-size: 18px; }
+.btns { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+button {
+  font: inherit; color: var(--ink); background: var(--card); border: 1.5px solid var(--line);
+  border-radius: 8px; padding: 7px 6px; cursor: pointer;
+}
+button:hover { border-color: var(--muted); }
+button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+.btns button.on.b-active { background: var(--active); border-color: var(--active-b); font-weight: 600; }
+.btns button.on.b-gen { background: var(--gen); border-color: var(--gen-b); font-weight: 600; }
+.btns button.on.b-pause { border-style: dashed; border-color: var(--pause-b); font-weight: 600; }
+.at { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 8px; font-size: 13px; color: var(--muted); }
+input[type=time], input[type=datetime-local], input[type=text], select {
+  font: inherit; color: var(--ink); background: var(--card); border: 1px solid var(--line);
+  border-radius: 6px; padding: 3px 6px; color-scheme: light dark;
+}
+.stats { margin-top: 10px; font-size: 13px; font-variant-numeric: tabular-nums; }
+.bar { height: 6px; background: var(--line); border-radius: 99px; margin-top: 6px; overflow: hidden; }
+.bar > div { height: 100%; width: 0; background: var(--gen-b); border-radius: 99px; }
+.bar > div.done { background: var(--ok); }
+details { margin-top: 10px; border-top: 1px solid var(--line); padding-top: 8px; }
+summary { cursor: pointer; color: var(--muted); font-size: 13px; }
+.seg-table { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 12px; }
+.seg-table td { padding: 3px 2px; vertical-align: middle; }
+.seg-table input[type=datetime-local] { width: 100%; min-width: 0; font-size: 12px; }
+.seg-table select { font-size: 12px; }
+.seg-table tr.overlap td { background: color-mix(in srgb, var(--warn) 14%, transparent); }
+.seg-table .dur { white-space: nowrap; color: var(--muted); text-align: right; }
+button.x { padding: 2px 7px; font-size: 12px; }
+.row-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.row-actions button { font-size: 12px; padding: 4px 8px; }
+button.danger { color: var(--warn); }
+
+/* Hubstaff */
+.hub-card { margin-top: 14px; display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+.hub-card .letter { width: auto; padding: 0 8px; background: var(--hub); color: var(--hub-ink); }
+#hubVal { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
+#hubBtn.on { background: var(--hub); color: var(--hub-ink); border-color: var(--hub); }
+.hub-set { display: flex; align-items: center; gap: 6px; margin-left: auto; flex-wrap: wrap; }
+.hub-set input { width: 96px; }
+footer { margin-top: 18px; display: flex; justify-content: flex-end; }
+
+@media (max-width: 420px) {
+  #tasks { grid-template-columns: 1fr; }
+  .tl-row { grid-template-columns: 56px 1fr; }
+  .btns { grid-template-columns: repeat(2, 1fr); }
+  .hub-set { margin-left: 0; }
+}
+</style>
+</head>
+<body>
+<main>
+  <h1>Parallel Timer</h1>
+  <div class="muted">Active + Generating count. Pause does not. Each task runs until it reaches 8 h.</div>
+  <div id="summary"></div>
+
+  <section class="card timeline" aria-label="Today's timeline">
+    <div id="timeline"></div>
+    <div class="legend">
+      <span class="lg-active">Active (counts)</span>
+      <span class="lg-gen">Generating (counts, even while you work on another task)</span>
+      <span class="lg-pause">Pause (does not count)</span>
+    </div>
+  </section>
+
+  <div id="tasks"></div>
+
+  <section class="card hub-card" aria-label="Hubstaff">
+    <span class="letter">Hubstaff</span>
+    <span id="hubVal">0:00:00</span>
+    <button id="hubBtn" type="button"></button>
+    <div class="hub-set">
+      <label for="hubInput" class="muted">Set to what I see:</label>
+      <input id="hubInput" type="text" placeholder="e.g. 4:00 or 3h15" autocomplete="off">
+      <button id="hubSetBtn" type="button">Set</button>
+    </div>
+  </section>
+
+  <footer><button id="resetAll" type="button" class="danger">Reset everything</button></footer>
+</main>
+
+<script>
+const KEY = 'parallel-timer-v1';
+const GOAL = 8 * 3600e3;
+const TYPES = { active: 'Active', gen: 'Generating', pause: 'Pause' };
+
+const $ = (s) => document.querySelector(s);
+const pad = (n) => String(n).padStart(2, '0');
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+function blank() {
+  return {
+    tasks: ['A', 'B', 'C', 'D'].map((id) => ({ id, name: 'Task ' + id, segs: [] })),
+    hub: { segs: [], adj: 0 },
+  };
+}
+function load() {
+  try {
+    const s = JSON.parse(localStorage.getItem(KEY));
+    if (s && Array.isArray(s.tasks) && s.hub) return s;
+  } catch (e) {}
+  return blank();
+}
+function save() {
+  try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {}
+}
+let state = load();
+
+/* ---------- formatting ---------- */
+function fmtClock(ms) {
+  const neg = ms < 0; const t = Math.floor(Math.abs(ms) / 1000);
+  return (neg ? '−' : '') + Math.floor(t / 3600) + ':' + pad(Math.floor((t % 3600) / 60)) + ':' + pad(t % 60);
+}
+function fmtShort(ms) {
+  const m = Math.floor(Math.max(0, ms) / 60000); const h = Math.floor(m / 60);
+  return h ? h + 'h ' + pad(m % 60) + 'm' : m + 'm';
+}
+function hhmm(ms) { const d = new Date(ms); return pad(d.getHours()) + ':' + pad(d.getMinutes()); }
+function toLocalInput(ms) {
+  const d = new Date(ms);
+  return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) + 'T' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+}
+function fromLocalInput(v) { return v ? new Date(v).getTime() : NaN; }
+
+/* "14:30" -> today 14:30 (or yesterday if that is still in the future) */
+function parseAt(v) {
+  const now = Date.now();
+  if (!v) return now;
+  const [h, m] = v.split(':').map(Number);
+  const d = new Date(now); d.setHours(h, m, 0, 0);
+  if (d.getTime() > now) d.setDate(d.getDate() - 1);
+  return d.getTime();
+}
+/* "4:00", "4:00:30", "3h15", "3h 15m", "45m" -> ms */
+function parseDur(v) {
+  v = v.trim().toLowerCase();
+  let m = v.match(/^(\d+):(\d{1,2})(?::(\d{1,2}))?$/);
+  if (m) return ((+m[1]) * 3600 + (+m[2]) * 60 + (+(m[3] || 0))) * 1000;
+  m = v.match(/^(?:(\d+)\s*h)?\s*(?:(\d+)\s*(?:m|min)?)?$/);
+  if (m && (m[1] || m[2])) return ((+(m[1] || 0)) * 3600 + (+(m[2] || 0)) * 60) * 1000;
+  return NaN;
+}
+
+/* ---------- model ---------- */
+const openSeg = (segs) => segs.find((s) => s.e == null) || null;
+const sortSegs = (segs) => segs.sort((a, b) => a.s - b.s);
+function sums(segs, now) {
+  const acc = { active: 0, gen: 0, pause: 0 };
+  for (const s of segs) acc[s.t] += Math.max(0, (s.e ?? now) - s.s);
+  return acc;
+}
+const sumPlain = (segs, now) => segs.reduce((a, s) => a + Math.max(0, (s.e ?? now) - s.s), 0);
+const hubTotal = (now) => sumPlain(state.hub.segs, now) + state.hub.adj;
+
+function transition(i, type) {
+  const t = state.tasks[i];
+  const inp = document.getElementById('at' + i);
+  const at = parseAt(inp.value);
+  const cur = openSeg(t.segs);
+  if (cur && cur.t === type) return;
+  if (!cur && !type) return;
+  if (cur && at <= cur.s) {
+    alert('The chosen time (' + hhmm(at) + ') is before the start of the current segment (' + hhmm(cur.s) + ').');
+    return;
+  }
+  const lastEnd = Math.max(-Infinity, ...t.segs.filter((s) => s.e != null).map((s) => s.e));
+  if (!cur && at < lastEnd) {
+    alert('The chosen time (' + hhmm(at) + ') is before the end of the last segment (' + hhmm(lastEnd) + ').');
+    return;
+  }
+  if (cur) cur.e = at;
+  if (type) t.segs.push({ t: type, s: at, e: null });
+  sortSegs(t.segs);
+  save(); render();
+}
+
+function editSeg(i, k, field, value) {
+  const segs = state.tasks[i].segs; const sg = segs[k]; const now = Date.now();
+  if (!sg) return;
+  if (field === 't') {
+    sg.t = value;
+  } else {
+    const ms = fromLocalInput(value);
+    if (isNaN(ms)) return render();
+    if (ms > now) { alert('That time is in the future.'); return render(); }
+    if (field === 's') {
+      if (ms === sg.s) return;
+      if (sg.e != null && ms >= sg.e) { alert('The start must be before the end.'); return render(); }
+      const prev = segs.find((x) => x !== sg && x.e === sg.s);
+      sg.s = ms;
+      if (prev && ms > prev.s) prev.e = ms; // keep the previous segment glued to this one
+    } else {
+      if (ms === sg.e) return;
+      if (ms <= sg.s) { alert('The end must be after the start.'); return render(); }
+      const next = segs.find((x) => x !== sg && x.s === sg.e);
+      sg.e = ms;
+      if (next && (next.e == null || ms < next.e)) next.s = ms; // keep the next segment glued
+    }
+  }
+  sortSegs(segs);
+  save(); render();
+}
+
+/* ---------- rendering ---------- */
+function segTable(t, i) {
+  const now = Date.now();
+  let prevEnd = -Infinity; let anyOverlap = false;
+  const rows = t.segs.map((sg, k) => {
+    const overlap = sg.s < prevEnd; anyOverlap ||= overlap;
+    prevEnd = Math.max(prevEnd, sg.e ?? now);
+    const opts = Object.entries(TYPES).map(([v, l]) => `<option value="${v}"${v === sg.t ? ' selected' : ''}>${l}</option>`).join('');
+    const end = sg.e == null
+      ? '<span class="muted">running</span>'
+      : `<input type="datetime-local" step="60" value="${toLocalInput(sg.e)}" data-edit="e" data-i="${i}" data-k="${k}" aria-label="End">`;
+    return `<tr class="${overlap ? 'overlap' : ''}">
+      <td><select data-edit="t" data-i="${i}" data-k="${k}" aria-label="Type">${opts}</select></td>
+      <td><input type="datetime-local" step="60" value="${toLocalInput(sg.s)}" data-edit="s" data-i="${i}" data-k="${k}" aria-label="Start"></td>
+      <td>${end}</td>
+      <td class="dur">${fmtShort((sg.e ?? now) - sg.s)}</td>
+      <td><button type="button" class="x" data-act="del" data-i="${i}" data-k="${k}" title="Delete this segment">✕</button></td>
+    </tr>`;
+  }).join('');
+  return (t.segs.length
+      ? `<table class="seg-table"><tbody>${rows}</tbody></table>`
+      : '<p class="muted">No segments yet.</p>')
+    + (anyOverlap ? '<p class="warn">Some segments overlap (in red): that time is counted twice.</p>' : '')
+    + `<div class="row-actions">
+        <button type="button" data-act="add" data-i="${i}">+ Add a segment</button>
+        <button type="button" class="danger" data-act="reset" data-i="${i}">Reset this task</button>
+      </div>`;
+}
+
+function taskCard(t, i, open) {
+  const cur = openSeg(t.segs); const st = cur ? cur.t : 'off';
+  const btn = (act, cls, label) =>
+    `<button type="button" data-act="${act}" data-i="${i}" class="${cls}${st === act ? ' on' : ''}">${label}</button>`;
+  return `<section class="card task">
+    <div class="task-head">
+      <span class="letter">${t.id}</span>
+      <input class="name" data-name="${i}" value="${esc(t.name)}" aria-label="Name of task ${t.id}">
+      <span class="pill" id="pill${i}"></span>
+    </div>
+    <span class="cur" id="cur${i}"></span>
+    <div class="btns">
+      ${btn('active', 'b-active', '▶ Active')}
+      ${btn('gen', 'b-gen', '⚙ Generating')}
+      ${btn('pause', 'b-pause', '⏸ Pause')}
+      ${btn('off', 'b-off', '⏹ Stop')}
+    </div>
+    <label class="at">The change happened at <input type="time" id="at${i}"> <span>(empty = now)</span></label>
+    <div class="stats" id="stats${i}"></div>
+    <div class="bar"><div id="prog${i}"></div></div>
+    <details data-i="${i}"${open ? ' open' : ''}>
+      <summary>Edit segments (${t.segs.length})</summary>
+      ${segTable(t, i)}
+    </details>
+  </section>`;
+}
+
+function render() {
+  const openSet = new Set([...document.querySelectorAll('#tasks details[open]')].map((d) => d.dataset.i));
+  $('#tasks').innerHTML = state.tasks.map((t, i) => taskCard(t, i, openSet.has(String(i)))).join('');
+  const hubOn = !!openSeg(state.hub.segs);
+  $('#hubBtn').textContent = hubOn ? '⏸ Stop Hubstaff' : '▶ Start Hubstaff';
+  $('#hubBtn').classList.toggle('on', hubOn);
+  tick();
+}
+
+function renderTimeline(now) {
+  const d0 = new Date(now); d0.setHours(0, 0, 0, 0); const day = d0.getTime();
+  const clip = (segs) => segs
+    .map((s) => ({ ...s, s: Math.max(s.s, day), e: Math.min(s.e ?? now, now) }))
+    .filter((s) => s.e > s.s);
+  const rows = state.tasks.map((t) => ({ label: t.id, title: t.name, segs: clip(t.segs) }));
+  const you = [];
+  rows.forEach((r) => r.segs.filter((s) => s.t === 'active').forEach((s) => you.push({ ...s, t: 'you', txt: r.label })));
+  const hub = clip(state.hub.segs).map((s) => ({ ...s, t: 'hub' }));
+
+  const starts = [...rows.flatMap((r) => r.segs), ...hub].map((s) => s.s);
+  let ws = starts.length ? Math.min(...starts) : now - 3600e3;
+  const span = Math.max(now - ws, 3600e3);
+  ws = now - span;
+  const pos = (x) => ((x - ws) / span) * 100;
+
+  const steps = [5, 10, 15, 30, 60, 120, 180, 240, 360].map((m) => m * 60e3);
+  const step = steps.find((s) => span / s <= 8) || steps[steps.length - 1];
+  const ticks = [];
+  for (let x = day + Math.ceil((ws - day) / step) * step; x <= now; x += step) ticks.push(x);
+  const grid = ticks.map((x) => `<div class="grid" style="left:${pos(x)}%"></div>`).join('');
+
+  const bar = (s, text) => {
+    const w = pos(s.e) - pos(s.s);
+    const tip = `${TYPES[s.t] || (s.t === 'hub' ? 'Hubstaff' : 'Active')} ${hhmm(s.s)}–${hhmm(s.e)} (${fmtShort(s.e - s.s)})`;
+    return `<div class="seg ${s.t}" style="left:${pos(s.s)}%;width:${w}%" title="${esc(tip)}">${w > 7 ? esc(text) : ''}</div>`;
+  };
+  const row = (label, title, inner) =>
+    `<div class="tl-row"><div class="tl-label" title="${esc(title)}">${esc(label)}</div><div class="tl-track">${grid}${inner}</div></div>`;
+
+  let html = `<div class="tl-row tl-axis"><div class="tl-label muted">Today</div><div class="tl-track">${
+    ticks.map((x) => `<span class="tick-label" style="left:${pos(x)}%">${hhmm(x)}</span>`).join('')}</div></div>`;
+  rows.forEach((r) => { html += row('Task ' + r.label, r.title, r.segs.map((s) => bar(s, fmtShort(s.e - s.s))).join('')); });
+  html += row('You', 'Active work, one task at a time', you.map((s) => bar(s, s.txt)).join(''));
+  html += row('Hubstaff', 'Hubstaff', hub.map((s) => bar(s, 'ON · ' + fmtShort(s.e - s.s))).join(''));
+  $('#timeline').innerHTML = html;
+}
+
+function tick() {
+  const now = Date.now(); let counted = 0; let actives = 0;
+  state.tasks.forEach((t, i) => {
+    const s = sums(t.segs, now); const cur = openSeg(t.segs); const st = cur ? cur.t : 'off';
+    const c = s.active + s.gen; counted += c;
+    if (st === 'active') actives++;
+    const pill = document.getElementById('pill' + i);
+    if (!pill) return;
+    pill.textContent = TYPES[st] || 'Stopped';
+    pill.className = 'pill ' + st;
+    document.getElementById('cur' + i).innerHTML = cur
+      ? `${TYPES[cur.t]} since ${hhmm(cur.s)} · <b>${fmtClock(now - cur.s)}</b>`
+      : '—';
+    document.getElementById('stats' + i).innerHTML =
+      `Active <b>${fmtShort(s.active)}</b> · Generating <b>${fmtShort(s.gen)}</b> · Pause <b>${fmtShort(s.pause)}</b> <span class="muted">(not counted)</span><br>`
+      + `Counted: <b>${fmtClock(c)}</b> / 8h` + (c >= GOAL ? ' <span style="color:var(--ok);font-weight:600">✓ 8 h reached</span>' : ` <span class="muted">(${fmtShort(GOAL - c)} left)</span>`);
+    const p = document.getElementById('prog' + i);
+    p.style.width = Math.min(100, (c / GOAL) * 100) + '%';
+    p.classList.toggle('done', c >= GOAL);
+  });
+  const hub = hubTotal(now);
+  $('#hubVal').textContent = fmtClock(hub);
+  $('#summary').innerHTML =
+    `Task hours counted: <b>${fmtClock(counted)}</b> in <b>${fmtClock(hub)}</b> of Hubstaff time`
+    + (hub > 60e3 ? ` <span class="muted">(×${(counted / hub).toFixed(2)})</span>` : '')
+    + (actives > 1 ? ` <span class="warn">· ⚠ ${actives} tasks Active at the same time</span>` : '');
+  renderTimeline(now);
+}
+
+/* ---------- events ---------- */
+$('#tasks').addEventListener('click', (e) => {
+  const b = e.target.closest('button[data-act]'); if (!b) return;
+  const i = +b.dataset.i; const act = b.dataset.act; const t = state.tasks[i];
+  if (act === 'del') {
+    if (!confirm('Delete this segment?')) return;
+    t.segs.splice(+b.dataset.k, 1); save(); render();
+  } else if (act === 'add') {
+    const e0 = t.segs.length ? t.segs[0].s : Date.now();
+    t.segs.unshift({ t: 'active', s: e0 - 15 * 60e3, e: e0 });
+    save(); render();
+  } else if (act === 'reset') {
+    if (!confirm('Clear all segments of "' + t.name + '"?')) return;
+    t.segs = []; t.name = 'Task ' + t.id; save(); render();
+  } else {
+    transition(i, act === 'off' ? null : act);
+  }
+});
+$('#tasks').addEventListener('change', (e) => {
+  const el = e.target;
+  if (el.tagName === 'SELECT' && el.dataset.edit) editSeg(+el.dataset.i, +el.dataset.k, 't', el.value);
+});
+// Date inputs are applied when leaving the field, so typing is not interrupted.
+$('#tasks').addEventListener('focusout', (e) => {
+  const el = e.target;
+  if (el.type === 'datetime-local' && el.dataset.edit) editSeg(+el.dataset.i, +el.dataset.k, el.dataset.edit, el.value);
+});
+$('#tasks').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && e.target.type === 'datetime-local') e.target.blur();
+});
+$('#tasks').addEventListener('input', (e) => {
+  const el = e.target;
+  if (el.dataset.name != null) { state.tasks[+el.dataset.name].name = el.value; save(); }
+});
+
+$('#hubBtn').addEventListener('click', () => {
+  const o = openSeg(state.hub.segs);
+  if (o) o.e = Date.now(); else state.hub.segs.push({ s: Date.now(), e: null });
+  save(); render();
+});
+function setHub() {
+  const ms = parseDur($('#hubInput').value);
+  if (isNaN(ms)) { alert('Unrecognized format. Examples: 4:00, 4:00:30, 3h15, 45m'); return; }
+  state.hub.adj = ms - sumPlain(state.hub.segs, Date.now());
+  $('#hubInput').value = '';
+  save(); tick();
+}
+$('#hubSetBtn').addEventListener('click', setHub);
+$('#hubInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') setHub(); });
+
+$('#resetAll').addEventListener('click', () => {
+  if (!confirm('Clear all 4 tasks and Hubstaff?')) return;
+  state = blank(); save(); render();
+});
+
+render();
+setInterval(tick, 1000);
+</script>
+</body>
+</html>
